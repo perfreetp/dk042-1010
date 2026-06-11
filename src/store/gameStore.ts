@@ -10,6 +10,8 @@ import {
   Proficiency,
   RulePreset,
   BattleResult,
+  BattleRecord,
+  ProficiencyLog,
 } from '@/engine/types';
 import { FIGHTERS } from '@/data/fighters';
 import { ITEMS } from '@/data/items';
@@ -69,6 +71,8 @@ const getInitialState = (): GameState => {
   const savedEmotes = loadFromStorage<Emote[]>('arena_emotes', EMOTES);
   const savedProficiencies = loadFromStorage<Proficiency[]>('arena_proficiencies', DEFAULT_PROFICIENCIES);
   const savedItemRates = loadFromStorage<{ [itemId: string]: number }>('arena_item_rates', DEFAULT_ITEM_RATES);
+  const savedBattleRecords = loadFromStorage<BattleRecord[]>('arena_battle_records', []);
+  const savedProficiencyLogs = loadFromStorage<ProficiencyLog[]>('arena_proficiency_logs', []);
 
   return {
     screen: 'menu',
@@ -87,6 +91,9 @@ const getInitialState = (): GameState => {
     isPaused: false,
     currentRound: 1,
     roundWins: { 0: 0, 1: 0, 2: 0, 3: 0 },
+    battleRecords: savedBattleRecords,
+    proficiencyLogs: savedProficiencyLogs,
+    selectedBattleRecord: null,
   };
 };
 
@@ -110,8 +117,14 @@ interface GameStore extends GameState {
   updateRankings: (winnerTeam: number, fighterStats: any) => void;
   updateTitles: (stats: any) => string[];
   updateEmotes: () => string[];
-  updateProficiencies: (expGained: { [fighterId: string]: number }) => void;
+  updateProficiencies: (
+    expGained: { [fighterId: string]: number },
+    battleRecordId?: string,
+    fighterStats?: any
+  ) => ProficiencyLog[];
   resetGame: () => void;
+  addBattleRecord: (record: BattleRecord) => void;
+  setSelectedBattleRecord: (record: BattleRecord | null) => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -313,10 +326,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return newlyUnlocked;
   },
 
-  updateProficiencies: (expGained) => set((state) => {
+  updateProficiencies: (expGained, battleRecordId, fighterStats) => {
+    const state = get();
+    const logs: ProficiencyLog[] = [];
     const newProficiencies = state.proficiencies.map(p => {
       const gained = expGained[p.fighterId] || 0;
       if (gained === 0) return p;
+      
+      const stats = fighterStats?.[p.fighterId] || {};
+      const winBonus = gained >= 100 ? 100 : 0;
+      const damageBonus = Math.floor((stats.damageDealt || 0) / 100);
+      const participation = Math.max(0, gained - winBonus - damageBonus);
+      
+      const oldLevel = p.level;
       let exp = p.exp + gained;
       let level = p.level;
       let expToNext = p.expToNext;
@@ -325,16 +347,46 @@ export const useGameStore = create<GameStore>((set, get) => ({
         level++;
         expToNext = Math.floor(expToNext * 1.5);
       }
+      
+      logs.push({
+        id: generateId(),
+        fighterId: p.fighterId,
+        timestamp: Date.now(),
+        expGained: gained,
+        sources: {
+          winBonus,
+          damageBonus,
+          participation,
+        },
+        leveledUp: level > oldLevel,
+        oldLevel,
+        newLevel: level,
+        battleRecordId,
+      });
+      
       return { ...p, exp, level, expToNext };
     });
+    
+    const allLogs = [...state.proficiencyLogs, ...logs].slice(-200);
     saveToStorage('arena_proficiencies', newProficiencies);
-    return { proficiencies: newProficiencies };
-  }),
+    saveToStorage('arena_proficiency_logs', allLogs);
+    set({ proficiencies: newProficiencies, proficiencyLogs: allLogs });
+    return logs;
+  },
 
   resetGame: () => set({
     currentRound: 1,
     roundWins: { 0: 0, 1: 0, 2: 0, 3: 0 },
     battleResult: null,
     isPaused: false,
+    selectedBattleRecord: null,
   }),
+
+  addBattleRecord: (record) => set((state) => {
+    const newRecords = [record, ...state.battleRecords].slice(0, 50);
+    saveToStorage('arena_battle_records', newRecords);
+    return { battleRecords: newRecords };
+  }),
+
+  setSelectedBattleRecord: (record) => set({ selectedBattleRecord: record }),
 }));

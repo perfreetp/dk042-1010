@@ -181,6 +181,51 @@ export interface Proficiency {
   expToNext: number;
 }
 
+export interface BattleRecord {
+  id: string;
+  createdAt: number;
+  winnerTeam: number;
+  roundResults: RoundResult[];
+  fighterStats: { [fighterId: string]: FighterBattleStats };
+  fighterIds: string[];
+  fighterTeams: { [fighterId: string]: number };
+  totalTime: number;
+  rules: GameRules;
+  newTitles: string[];
+  newEmotes: string[];
+  expGained: { [fighterId: string]: number };
+}
+
+export interface ProficiencyLog {
+  id: string;
+  fighterId: string;
+  timestamp: number;
+  expGained: number;
+  sources: {
+    winBonus: number;
+    damageBonus: number;
+    participation: number;
+  };
+  leveledUp: boolean;
+  oldLevel: number;
+  newLevel: number;
+  battleRecordId?: string;
+}
+
+export type UnlockSourceType = 'battle' | 'title' | 'emote' | 'proficiency';
+
+export interface UnlockDetail {
+  id: string;
+  type: UnlockSourceType;
+  name: string;
+  icon: string;
+  description: string;
+  unlockedAt: number;
+  source?: string;
+  progress?: number;
+  target?: number;
+}
+
 export type ScreenType = 'menu' | 'select' | 'rules' | 'workshop' | 'battle' | 'result' | 'ranking';
 
 export interface RoundResult {
@@ -226,6 +271,9 @@ export interface GameState {
   isPaused: boolean;
   currentRound: number;
   roundWins: { [team: number]: number };
+  battleRecords: BattleRecord[];
+  proficiencyLogs: ProficiencyLog[];
+  selectedBattleRecord: BattleRecord | null;
 }
 
 export interface Particle {

@@ -1,30 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { NeonButton } from '@/components/layout/NeonButton';
 import { NeonCard } from '@/components/layout/NeonCard';
 import { getFighterById } from '@/data/fighters';
-import { ArrowLeft, Trophy, Medal, Award, Star, Smile, TrendingUp } from 'lucide-react';
+import { TITLES, EMOTES } from '@/data/titles';
+import { ArrowLeft, Trophy, Medal, Award, Star, Smile, TrendingUp, FileText, X, Swords, Zap, Target, Clock, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { BattleRecord, Title, Emote, ProficiencyLog } from '@/engine/types';
 
-type TabType = 'ranking' | 'titles' | 'emotes' | 'proficiency';
+type TabType = 'ranking' | 'battles' | 'titles' | 'emotes' | 'proficiency';
 
 export const SeasonRanking: React.FC = () => {
-  const { setScreen, rankings, titles, emotes, proficiencies } = useGameStore();
+  const { 
+    setScreen, 
+    rankings, 
+    titles, 
+    emotes, 
+    proficiencies,
+    battleRecords,
+    proficiencyLogs,
+    selectedBattleRecord,
+    setSelectedBattleRecord,
+  } = useGameStore();
+  
   const [activeTab, setActiveTab] = useState<TabType>('ranking');
+  const [selectedTitle, setSelectedTitle] = useState<Title | null>(null);
+  const [selectedEmote, setSelectedEmote] = useState<Emote | null>(null);
+  const [selectedProfFighter, setSelectedProfFighter] = useState<string | null>(null);
 
   const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'ranking', label: '胜率排行', icon: <Trophy size={20} /> },
+    { id: 'battles', label: '最近战报', icon: <FileText size={20} /> },
     { id: 'titles', label: '称号收集', icon: <Award size={20} /> },
     { id: 'emotes', label: '表情收藏', icon: <Smile size={20} /> },
     { id: 'proficiency', label: '角色熟练度', icon: <TrendingUp size={20} /> },
   ];
 
-  const sortedRankings = [...rankings].sort((a, b) => {
+  const sortedRankings = useMemo(() => [...rankings].sort((a, b) => {
     const winRateA = a.wins / (a.wins + a.losses) || 0;
     const winRateB = b.wins / (b.wins + b.losses) || 0;
     if (winRateB !== winRateA) return winRateB - winRateA;
     return b.wins - a.wins;
-  });
+  }), [rankings]);
+
+  const formatDate = (ts: number) => {
+    const d = new Date(ts);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const fighterLogs = useMemo(() => {
+    if (!selectedProfFighter) return [];
+    return proficiencyLogs
+      .filter(l => l.fighterId === selectedProfFighter)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 20);
+  }, [selectedProfFighter, proficiencyLogs]);
 
   return (
     <div className="w-full h-full bg-noise bg-grid overflow-auto">
@@ -45,13 +75,17 @@ export const SeasonRanking: React.FC = () => {
           <div className="w-[140px]" />
         </div>
 
-        <div className="flex gap-2 mb-6 justify-center">
+        <div className="flex gap-2 mb-6 justify-center flex-wrap">
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setSelectedBattleRecord(null);
+                setSelectedProfFighter(null);
+              }}
               className={cn(
-                'flex items-center gap-2 px-6 py-3 rounded-xl font-orbitron font-bold transition-all',
+                'flex items-center gap-2 px-5 py-3 rounded-xl font-orbitron font-bold transition-all',
                 activeTab === tab.id
                   ? 'bg-arena-gold/20 text-arena-gold border-2 border-arena-gold shadow-[0_0_15px_rgba(251,191,36,0.4)]'
                   : 'bg-arena-darker text-white/60 border-2 border-white/10 hover:border-white/30 hover:text-white'
@@ -165,6 +199,100 @@ export const SeasonRanking: React.FC = () => {
             </NeonCard>
           )}
 
+          {activeTab === 'battles' && (
+            selectedBattleRecord ? (
+              <BattleDetailView 
+                record={selectedBattleRecord} 
+                onBack={() => setSelectedBattleRecord(null)}
+                formatDate={formatDate}
+              />
+            ) : (
+              <NeonCard color="cyan" className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="font-orbitron text-2xl font-bold text-arena-cyan flex items-center gap-3">
+                    <FileText size={28} />
+                    最近战报
+                  </h2>
+                  <div className="text-white/60 font-zcool">
+                    共 {battleRecords.length} 场记录
+                  </div>
+                </div>
+
+                {battleRecords.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="text-6xl mb-4">📋</div>
+                    <p className="font-zcool text-xl text-white/60">暂无战斗记录</p>
+                    <p className="font-zcool text-sm text-white/40 mt-2">去打一场比赛吧！</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {battleRecords.map(record => (
+                      <div
+                        key={record.id}
+                        onClick={() => setSelectedBattleRecord(record)}
+                        className="p-4 rounded-xl bg-arena-darker/50 border border-white/10 hover:border-arena-cyan/50 cursor-pointer transition-all"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={cn(
+                            'w-14 h-14 rounded-xl flex items-center justify-center text-3xl',
+                            record.winnerTeam === 0
+                              ? 'bg-arena-cyan/20 border-2 border-arena-cyan'
+                              : 'bg-arena-orange/20 border-2 border-arena-orange'
+                          )}>
+                            🏆
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-1">
+                              <span className={cn(
+                                'font-orbitron font-bold text-lg',
+                                record.winnerTeam === 0 ? 'text-arena-cyan' : 'text-arena-orange'
+                              )}>
+                                队伍 {record.winnerTeam + 1} 获胜
+                              </span>
+                              <span className="text-white/40 font-zcool text-sm">
+                                {formatDate(record.createdAt)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm">
+                              <span className="text-white/60 font-zcool">
+                                <Clock size={14} className="inline mr-1" />
+                                {Math.floor(record.totalTime / 60)}分{Math.floor(record.totalTime % 60)}秒
+                              </span>
+                              <span className="text-white/60 font-zcool">
+                                <Swords size={14} className="inline mr-1" />
+                                {record.roundResults.length} 回合
+                              </span>
+                              <span className="text-white/60 font-zcool">
+                                <Target size={14} className="inline mr-1" />
+                                {record.rules.winCondition === 'ko' ? `KO制 ${record.rules.winValue}` : record.rules.winCondition === 'hp' ? '生命制' : '时间制'}
+                              </span>
+                            </div>
+                            <div className="flex gap-1 mt-2">
+                              {record.roundResults.map((r, i) => (
+                                <div
+                                  key={i}
+                                  className={cn(
+                                    'w-8 h-6 rounded text-xs font-orbitron flex items-center justify-center',
+                                    r.winner === 0 ? 'bg-arena-cyan/30 text-arena-cyan' : 'bg-arena-orange/30 text-arena-orange'
+                                  )}
+                                >
+                                  R{r.round}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="text-white/40">
+                            <ArrowLeft size={20} className="rotate-180" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </NeonCard>
+            )
+          )}
+
           {activeTab === 'titles' && (
             <NeonCard color="purple" className="p-6">
               <div className="flex items-center justify-between mb-6">
@@ -181,10 +309,11 @@ export const SeasonRanking: React.FC = () => {
                 {titles.map(title => (
                   <div
                     key={title.id}
+                    onClick={() => title.unlocked && setSelectedTitle(title)}
                     className={cn(
                       'p-4 rounded-xl border-2 transition-all',
                       title.unlocked
-                        ? 'bg-arena-purple/20 border-arena-purpleLight shadow-[0_0_15px_rgba(168,85,247,0.3)]'
+                        ? 'bg-arena-purple/20 border-arena-purpleLight shadow-[0_0_15px_rgba(168,85,247,0.3)] cursor-pointer hover:scale-[1.02]'
                         : 'bg-arena-darker/50 border-white/10 opacity-60'
                     )}
                   >
@@ -237,6 +366,7 @@ export const SeasonRanking: React.FC = () => {
                 {emotes.map(emote => (
                   <div
                     key={emote.id}
+                    onClick={() => emote.unlocked && setSelectedEmote(emote)}
                     className={cn(
                       'aspect-square rounded-xl flex flex-col items-center justify-center border-2 transition-all p-2',
                       emote.unlocked
@@ -268,70 +398,375 @@ export const SeasonRanking: React.FC = () => {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="font-orbitron text-2xl font-bold text-arena-cyan flex items-center gap-3">
                   <Star size={28} />
-                  角色熟练度
+                  {selectedProfFighter ? `${getFighterById(selectedProfFighter)?.name || ''} - 最近参战` : '角色熟练度'}
                 </h2>
-                <div className="text-white/60 font-zcool">
-                  使用角色获得经验提升等级
+                <div className="flex items-center gap-2">
+                  {selectedProfFighter && (
+                    <NeonButton variant="cyan" size="sm" onClick={() => setSelectedProfFighter(null)}>
+                      <ArrowLeft size={16} className="mr-1" /> 返回列表
+                    </NeonButton>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {proficiencies.map(prof => {
-                  const fighter = getFighterById(prof.fighterId);
-                  if (!fighter) return null;
-                  const expPercent = (prof.exp / prof.expToNext) * 100;
+              {selectedProfFighter ? (
+                <ProficiencyLogsView 
+                  logs={fighterLogs} 
+                  fighterId={selectedProfFighter}
+                  formatDate={formatDate}
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {proficiencies.map(prof => {
+                    const fighter = getFighterById(prof.fighterId);
+                    if (!fighter) return null;
+                    const expPercent = (prof.exp / prof.expToNext) * 100;
+                    const logs = proficiencyLogs.filter(l => l.fighterId === prof.fighterId);
 
-                  return (
-                    <div
-                      key={prof.fighterId}
-                      className="p-4 rounded-xl bg-arena-darker/50 border border-white/10 hover:border-arena-cyan/50 transition-all"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div
-                          className="w-16 h-16 rounded-xl flex items-center justify-center text-4xl relative"
-                          style={{
-                            backgroundColor: fighter.color + '20',
-                            border: `2px solid ${fighter.color}`,
-                          }}
-                        >
-                          {fighter.avatar}
-                          <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-arena-gold flex items-center justify-center font-orbitron font-bold text-sm text-arena-darker shadow-lg">
-                            {prof.level}
-                          </div>
-                        </div>
-
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-1">
-                            <h3 className="font-orbitron font-bold text-white text-lg">{fighter.name}</h3>
-                            <div className="flex items-center gap-1">
-                              <Star className="text-arena-gold" size={16} fill="#fbbf24" />
-                              <span className="font-orbitron font-bold text-arena-gold">Lv.{prof.level}</span>
+                    return (
+                      <div
+                        key={prof.fighterId}
+                        onClick={() => setSelectedProfFighter(prof.fighterId)}
+                        className="p-4 rounded-xl bg-arena-darker/50 border border-white/10 hover:border-arena-cyan/50 transition-all cursor-pointer"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div
+                            className="w-16 h-16 rounded-xl flex items-center justify-center text-4xl relative"
+                            style={{
+                              backgroundColor: fighter.color + '20',
+                              border: `2px solid ${fighter.color}`,
+                            }}
+                          >
+                            {fighter.avatar}
+                            <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-arena-gold flex items-center justify-center font-orbitron font-bold text-sm text-arena-darker shadow-lg">
+                              {prof.level}
                             </div>
                           </div>
-                          <div className="h-3 bg-arena-darker rounded-full overflow-hidden border border-arena-cyan/30">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${expPercent}%`,
-                                background: `linear-gradient(90deg, ${fighter.color}, #06b6d4)`,
-                                boxShadow: `0 0 10px ${fighter.color}`,
-                              }}
-                            />
-                          </div>
-                          <div className="flex justify-between text-xs font-orbitron mt-1">
-                            <span className="text-white/50">经验值</span>
-                            <span className="text-arena-cyan">{prof.exp} / {prof.expToNext}</span>
+
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className="font-orbitron font-bold text-white text-lg">{fighter.name}</h3>
+                              <div className="flex items-center gap-1">
+                                <Star className="text-arena-gold" size={16} fill="#fbbf24" />
+                                <span className="font-orbitron font-bold text-arena-gold">Lv.{prof.level}</span>
+                              </div>
+                            </div>
+                            <div className="h-3 bg-arena-darker rounded-full overflow-hidden border border-arena-cyan/30">
+                              <div
+                                className="h-full rounded-full transition-all"
+                                style={{
+                                  width: `${expPercent}%`,
+                                  background: `linear-gradient(90deg, ${fighter.color}, #06b6d4)`,
+                                  boxShadow: `0 0 10px ${fighter.color}`,
+                                }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-xs font-orbitron mt-1">
+                              <span className="text-white/50">经验值</span>
+                              <span className="text-arena-cyan">{prof.exp} / {prof.expToNext}</span>
+                            </div>
+                            <div className="text-xs text-white/40 font-zcool mt-1">
+                              参战记录: {logs.length} 场
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </NeonCard>
           )}
         </div>
       </div>
+
+      {selectedTitle && (
+        <Modal onClose={() => setSelectedTitle(null)}>
+          <div className="text-center">
+            <div className="text-7xl mb-4">{selectedTitle.icon}</div>
+            <h2 className="font-orbitron text-3xl font-bold text-arena-purpleLight mb-2">
+              {selectedTitle.name}
+            </h2>
+            <p className="font-zcool text-white/80 text-lg mb-6">{selectedTitle.description}</p>
+            <div className="p-4 rounded-xl bg-black/40 text-left space-y-2">
+              <div className="flex justify-between">
+                <span className="text-white/60 font-zcool">解锁条件</span>
+                <span className="text-arena-cyan font-orbitron">{selectedTitle.condition}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60 font-zcool">当前进度</span>
+                <span className="text-arena-gold font-orbitron">{selectedTitle.progress} / {selectedTitle.target}</span>
+              </div>
+              <div className="h-3 bg-arena-darker rounded-full overflow-hidden mt-2">
+                <div
+                  className="h-full rounded-full bg-arena-purpleLight"
+                  style={{ width: `${Math.min(100, (selectedTitle.progress / selectedTitle.target) * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {selectedEmote && (
+        <Modal onClose={() => setSelectedEmote(null)}>
+          <div className="text-center">
+            <div className="text-7xl mb-4">{selectedEmote.icon}</div>
+            <h2 className="font-orbitron text-3xl font-bold text-arena-orange mb-2">
+              {selectedEmote.name}
+            </h2>
+            <p className="font-zcool text-white/80 text-lg">表情收藏已解锁 🎉</p>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+const Modal: React.FC<{ onClose: () => void; children: React.ReactNode }> = ({ onClose, children }) => (
+  <div 
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+    onClick={onClose}
+  >
+    <div 
+      className="relative max-w-md w-full mx-4"
+      onClick={e => e.stopPropagation()}
+    >
+      <NeonCard color="purple" className="p-8">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/20 transition-all"
+        >
+          <X size={18} />
+        </button>
+        {children}
+      </NeonCard>
+    </div>
+  </div>
+);
+
+const BattleDetailView: React.FC<{
+  record: BattleRecord;
+  onBack: () => void;
+  formatDate: (ts: number) => string;
+}> = ({ record, onBack, formatDate }) => {
+  return (
+    <NeonCard color="cyan" className="p-6">
+      <div className="flex items-center gap-3 mb-6">
+        <NeonButton variant="cyan" size="sm" onClick={onBack}>
+          <ArrowLeft size={16} className="mr-1" /> 返回列表
+        </NeonButton>
+        <h2 className="font-orbitron text-2xl font-bold text-arena-cyan flex items-center gap-3">
+          <FileText size={28} />
+          战报详情
+        </h2>
+      </div>
+
+      <div className="mb-6 p-4 rounded-xl bg-black/30 border border-white/10">
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <div className="text-arena-cyan font-orbitron text-2xl font-bold">
+              {record.roundResults.filter(r => r.winner === 0).length}
+            </div>
+            <div className="text-white/60 font-zcool text-sm">队伍1胜场</div>
+          </div>
+          <div>
+            <div className={cn(
+              'font-orbitron text-3xl font-black',
+              record.winnerTeam === 0 ? 'text-arena-cyan' : 'text-arena-orange'
+            )}>
+              🏆 队{record.winnerTeam + 1}
+            </div>
+            <div className="text-white/60 font-zcool text-sm">
+              {formatDate(record.createdAt)}
+            </div>
+          </div>
+          <div>
+            <div className="text-arena-orange font-orbitron text-2xl font-bold">
+              {record.roundResults.filter(r => r.winner === 1).length}
+            </div>
+            <div className="text-white/60 font-zcool text-sm">队伍2胜场</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <h3 className="font-orbitron text-lg text-arena-gold mb-3 flex items-center gap-2">
+          <Swords size={20} /> 每回合详情
+        </h3>
+        <div className="space-y-2">
+          {record.roundResults.map((r, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-arena-darker/50 border border-white/10">
+              <div className={cn(
+                'w-10 h-10 rounded-lg flex items-center justify-center font-orbitron font-bold',
+                r.winner === 0 ? 'bg-arena-cyan/30 text-arena-cyan' : 'bg-arena-orange/30 text-arena-orange'
+              )}>
+                R{r.round}
+              </div>
+              <div className="flex-1">
+                <div className="font-orbitron font-bold text-white">
+                  队伍 {r.winner + 1} 获胜
+                </div>
+                <div className="text-xs text-white/50 font-zcool">
+                  用时 {Math.floor(r.timeElapsed)}秒 · KO 队1:{r.koCount[0] || 0} 队2:{r.koCount[1] || 0}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="font-orbitron text-lg text-arena-gold mb-3 flex items-center gap-2">
+          <Target size={20} /> 斗士数据
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
+          {record.fighterIds.map(fid => {
+            const fighter = getFighterById(fid);
+            if (!fighter) return null;
+            const team = record.fighterTeams[fid];
+            const stats = record.fighterStats[fid] as any || {};
+            const isWinner = team === record.winnerTeam;
+            return (
+              <div
+                key={fid}
+                className={cn(
+                  'p-3 rounded-lg border-2',
+                  isWinner ? 'border-arena-gold bg-arena-gold/10' : 'border-white/10 bg-arena-darker'
+                )}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">{fighter.avatar}</span>
+                  <span className="font-zcool text-white">{fighter.name}</span>
+                  <span className={cn(
+                    'text-xs font-orbitron px-2 py-0.5 rounded',
+                    team === 0 ? 'bg-arena-cyan/20 text-arena-cyan' : 'bg-arena-orange/20 text-arena-orange'
+                  )}>
+                    队{team + 1}
+                  </span>
+                  {isWinner && <Trophy className="text-arena-gold" size={16} />}
+                </div>
+                <div className="grid grid-cols-2 gap-1 text-xs font-orbitron text-white/70">
+                  <span className="text-arena-red">伤害: {stats.damageDealt || 0}</span>
+                  <span className="text-arena-cyan">承伤: {stats.damageTaken || 0}</span>
+                  <span className="text-arena-orange">击杀: {stats.kills || 0}</span>
+                  <span className="text-arena-purpleLight">死亡: {stats.deaths || 0}</span>
+                  <span className="text-arena-green">道具: {stats.itemsUsed || 0}</span>
+                  <span className="text-arena-gold">必杀: {stats.specialUsed || 0}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {(record.newTitles.length > 0 || record.newEmotes.length > 0) && (
+        <div className="mt-6">
+          <h3 className="font-orbitron text-lg text-arena-gold mb-3 flex items-center gap-2">
+            <Zap size={20} /> 本场解锁
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {record.newTitles.map(tid => {
+              const t = TITLES.find(x => x.id === tid);
+              if (!t) return null;
+              return (
+                <div key={tid} className="px-3 py-2 rounded-lg bg-arena-purple/15 border border-arena-purpleLight">
+                  <span className="text-xl mr-2">{t.icon}</span>
+                  <span className="font-zcool text-arena-purpleLight text-sm">{t.name}</span>
+                </div>
+              );
+            })}
+            {record.newEmotes.map(eid => {
+              const e = EMOTES.find(x => x.id === eid);
+              if (!e) return null;
+              return (
+                <div key={eid} className="px-3 py-2 rounded-lg bg-arena-orange/15 border border-arena-orange">
+                  <span className="text-xl mr-2">{e.icon}</span>
+                  <span className="font-zcool text-arena-orange text-sm">{e.name}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </NeonCard>
+  );
+};
+
+const ProficiencyLogsView: React.FC<{
+  logs: ProficiencyLog[];
+  fighterId: string;
+  formatDate: (ts: number) => string;
+}> = ({ logs, fighterId, formatDate }) => {
+  if (logs.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-5xl mb-4">📊</div>
+        <p className="font-zcool text-xl text-white/60">暂无参战记录</p>
+        <p className="font-zcool text-sm text-white/40 mt-2">使用这个角色去战斗吧！</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {logs.map(log => (
+        <div
+          key={log.id}
+          className={cn(
+            'p-4 rounded-xl border-2 transition-all',
+            log.leveledUp
+              ? 'bg-arena-gold/10 border-arena-gold/50'
+              : 'bg-arena-darker/50 border-white/10'
+          )}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              {log.leveledUp && (
+                <span className="px-2 py-0.5 rounded bg-arena-gold/30 text-arena-gold font-orbitron text-xs font-bold animate-pulse">
+                  ⬆️ 升级！
+                </span>
+              )}
+              <span className="font-zcool text-white/60 text-sm">
+                {formatDate(log.timestamp)}
+              </span>
+            </div>
+            <div className="text-arena-green font-orbitron font-bold text-lg">
+              +{log.expGained} EXP
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="p-2 rounded bg-black/30 text-center">
+              <Trophy size={14} className="text-arena-gold mx-auto mb-1" />
+              <div className="text-white font-orbitron text-sm">+{log.sources.winBonus}</div>
+              <div className="text-white/40 text-xs font-zcool">胜利奖励</div>
+            </div>
+            <div className="p-2 rounded bg-black/30 text-center">
+              <Swords size={14} className="text-arena-red mx-auto mb-1" />
+              <div className="text-white font-orbitron text-sm">+{log.sources.damageBonus}</div>
+              <div className="text-white/40 text-xs font-zcool">伤害奖励</div>
+            </div>
+            <div className="p-2 rounded bg-black/30 text-center">
+              <Heart size={14} className="text-arena-cyan mx-auto mb-1" />
+              <div className="text-white font-orbitron text-sm">+{log.sources.participation}</div>
+              <div className="text-white/40 text-xs font-zcool">参战奖励</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-white/50 font-zcool">等级:</span>
+            <span className="text-arena-gold font-orbitron font-bold">Lv.{log.oldLevel}</span>
+            <span className="text-white/30">→</span>
+            <span className={cn(
+              'font-orbitron font-bold',
+              log.leveledUp ? 'text-arena-green' : 'text-arena-gold'
+            )}>
+              Lv.{log.newLevel}
+            </span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

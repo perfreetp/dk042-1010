@@ -4,11 +4,13 @@ import { GameEngine, ARENA_WIDTH, ARENA_HEIGHT, GROUND_Y, FIGHTER_WIDTH, FIGHTER
 import { getFighterById } from '@/data/fighters';
 import { getItemById } from '@/data/items';
 import { getWeaponById } from '@/data/weapons';
+import { TITLES, EMOTES } from '@/data/titles';
 import { NeonButton } from '@/components/layout/NeonButton';
 import { NeonCard } from '@/components/layout/NeonCard';
-import { FighterState } from '@/engine/types';
+import { FighterState, BattleRecord } from '@/engine/types';
 import { ArrowLeft, Home, Play, Pause, RotateCcw, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { generateId } from '@/utils/math';
 
 export const BattleArena: React.FC = () => {
   const { 
@@ -24,12 +26,14 @@ export const BattleArena: React.FC = () => {
     roundWins,
     setCurrentRound,
     addRoundWin,
+    battleResult,
     setBattleResult,
     updateRankings,
     updateTitles,
     updateEmotes,
     updateProficiencies,
     resetGame,
+    addBattleRecord,
   } = useGameStore();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,6 +45,7 @@ export const BattleArena: React.FC = () => {
   const [roundCountdown, setRoundCountdown] = useState<number | null>(3);
   const [battleEnded, setBattleEnded] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
+  const [selectedUnlock, setSelectedUnlock] = useState<{ type: 'title' | 'emote'; id: string } | null>(null);
   
   const allRoundResultsRef = useRef<Array<{
     round: number;
@@ -265,10 +270,10 @@ export const BattleArena: React.FC = () => {
 
       const fighters = engineRef.current.state.fighters;
       const winnerFighters = fighters.filter(f => f.team === winnerTeam);
-      const avgHpPercent = winnerFighters.length > 0
-        ? winnerFighters.reduce((sum, f) => sum + (f.hp / f.maxHp), 0) / winnerFighters.length
-        : 0;
-      const survivedLowHp = avgHpPercent > 0 && avgHpPercent < 0.3;
+      const minHpPercent = winnerFighters.length > 0
+        ? winnerFighters.reduce((min, f) => Math.min(min, f.hp / f.maxHp), 1)
+        : 1;
+      const survivedLowHp = minHpPercent > 0 && minHpPercent <= 0.1;
 
       updateRankings(winnerTeam, finalStats);
       
@@ -281,7 +286,25 @@ export const BattleArena: React.FC = () => {
         itemsUsed: Object.values(finalStats).reduce((sum: number, s: any) => sum + s.itemsUsed, 0),
       });
       const newEmotes = updateEmotes();
-      updateProficiencies(expGained);
+
+      const battleRecordId = generateId();
+      updateProficiencies(expGained, battleRecordId, finalStats);
+
+      const battleRecord: BattleRecord = {
+        id: battleRecordId,
+        createdAt: Date.now(),
+        winnerTeam,
+        roundResults: allRoundResultsRef.current,
+        fighterStats: finalStats,
+        fighterIds: [...selectedFighters],
+        fighterTeams: { ...playerTeams },
+        totalTime: totalTimeRef.current,
+        rules: { ...rules },
+        newTitles,
+        newEmotes,
+        expGained,
+      };
+      addBattleRecord(battleRecord);
 
       setBattleResult({
         winnerTeam,
@@ -766,6 +789,123 @@ export const BattleArena: React.FC = () => {
                       );
                     })}
                   </div>
+
+                  {(battleResult?.newTitles && battleResult.newTitles.length > 0 || battleResult?.newEmotes && battleResult.newEmotes.length > 0) && (
+                    <div className="mb-6">
+                      <h3 className="font-orbitron text-xl text-arena-gold mb-4 text-left">🎉 新解锁内容</h3>
+                      <div className="flex flex-wrap gap-3 justify-center">
+                        {battleResult?.newTitles?.map(tid => {
+                          const title = TITLES.find(t => t.id === tid);
+                          if (!title) return null;
+                          return (
+                            <div
+                              key={tid}
+                              onClick={() => setSelectedUnlock({ type: 'title', id: tid })}
+                              className="px-4 py-3 rounded-lg bg-arena-gold/15 border-2 border-arena-gold hover:bg-arena-gold/25 cursor-pointer transition-all animate-pulse-neon"
+                            >
+                              <div className="text-3xl text-center mb-1">{title.icon}</div>
+                              <div className="font-zcool text-arena-gold text-sm text-center">{title.name}</div>
+                              <div className="text-xs text-white/50 text-center">称号</div>
+                            </div>
+                          );
+                        })}
+                        {battleResult?.newEmotes?.map(eid => {
+                          const emote = EMOTES.find(e => e.id === eid);
+                          if (!emote) return null;
+                          return (
+                            <div
+                              key={eid}
+                              onClick={() => setSelectedUnlock({ type: 'emote', id: eid })}
+                              className="px-4 py-3 rounded-lg bg-arena-purpleLight/15 border-2 border-arena-purpleLight hover:bg-arena-purpleLight/25 cursor-pointer transition-all animate-pulse-neon"
+                            >
+                              <div className="text-3xl text-center mb-1">{emote.icon}</div>
+                              <div className="font-zcool text-arena-purpleLight text-sm text-center">{emote.name}</div>
+                              <div className="text-xs text-white/50 text-center">表情</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mb-6">
+                    <h3 className="font-orbitron text-xl text-arena-purpleLight mb-4 text-left">🎯 战斗统计</h3>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(() => {
+                        const totalItems = Object.values(cumulativeStatsRef.current).reduce((sum: number, s: any) => sum + (s.itemsUsed || 0), 0);
+                        const totalKills = Object.values(cumulativeStatsRef.current).reduce((sum: number, s: any) => sum + (s.kills || 0), 0);
+                        const totalDamage = Object.values(cumulativeStatsRef.current).reduce((sum: number, s: any) => sum + (s.damageDealt || 0), 0);
+                        const totalSpecials = Object.values(cumulativeStatsRef.current).reduce((sum: number, s: any) => sum + (s.specialUsed || 0), 0);
+                        return (
+                          <>
+                            <div className="p-2 rounded bg-arena-darker border border-white/10 text-center">
+                              <div className="text-2xl">🎒</div>
+                              <div className="font-orbitron text-white text-lg">{totalItems}</div>
+                              <div className="text-xs text-white/50 font-zcool">道具使用</div>
+                            </div>
+                            <div className="p-2 rounded bg-arena-darker border border-white/10 text-center">
+                              <div className="text-2xl">⚔️</div>
+                              <div className="font-orbitron text-white text-lg">{totalKills}</div>
+                              <div className="text-xs text-white/50 font-zcool">总击杀</div>
+                            </div>
+                            <div className="p-2 rounded bg-arena-darker border border-white/10 text-center">
+                              <div className="text-2xl">💥</div>
+                              <div className="font-orbitron text-white text-lg">{totalDamage}</div>
+                              <div className="text-xs text-white/50 font-zcool">总伤害</div>
+                            </div>
+                            <div className="p-2 rounded bg-arena-darker border border-white/10 text-center">
+                              <div className="text-2xl">⚡</div>
+                              <div className="font-orbitron text-white text-lg">{totalSpecials}</div>
+                              <div className="text-xs text-white/50 font-zcool">必杀次数</div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {selectedUnlock && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/70 z-10 rounded-xl" onClick={() => setSelectedUnlock(null)}>
+                      <NeonCard
+                        color={selectedUnlock.type === 'title' ? 'gold' : 'purple'}
+                        className="p-6 max-w-sm text-center"
+                      >
+                        {(() => {
+                          if (selectedUnlock.type === 'title') {
+                            const t = TITLES.find(x => x.id === selectedUnlock.id);
+                            if (!t) return null;
+                            return (
+                              <>
+                                <div className="text-6xl mb-3">{t.icon}</div>
+                                <h3 className="font-orbitron text-2xl font-bold text-arena-gold mb-2">{t.name}</h3>
+                                <p className="font-zcool text-white/80 mb-3">{t.description}</p>
+                                <div className="p-3 rounded bg-black/30 text-left">
+                                  <div className="text-xs text-white/60 font-zcool mb-1">解锁条件：{t.condition}</div>
+                                  <div className="text-xs text-arena-cyan font-orbitron">进度：{t.progress} / {t.target}</div>
+                                </div>
+                              </>
+                            );
+                          } else {
+                            const e = EMOTES.find(x => x.id === selectedUnlock.id);
+                            if (!e) return null;
+                            return (
+                              <>
+                                <div className="text-6xl mb-3">{e.icon}</div>
+                                <h3 className="font-orbitron text-2xl font-bold text-arena-purpleLight mb-2">{e.name}</h3>
+                                <p className="font-zcool text-white/80 mb-3">表情收藏已解锁！</p>
+                                <div className="p-3 rounded bg-black/30 text-left">
+                                  <div className="text-xs text-white/60 font-zcool">在排行榜的表情收藏页查看和使用</div>
+                                </div>
+                              </>
+                            );
+                          }
+                        })()}
+                        <NeonButton variant="cyan" size="sm" className="mt-4 w-full" onClick={() => setSelectedUnlock(null)}>
+                          关闭
+                        </NeonButton>
+                      </NeonCard>
+                    </div>
+                  )}
 
                   <div className="flex gap-4">
                     <NeonButton variant="cyan" size="lg" className="flex-1" onClick={handleRestart}>
