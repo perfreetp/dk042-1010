@@ -228,11 +228,55 @@ export interface UnlockDetail {
 
 export type ScreenType = 'menu' | 'select' | 'rules' | 'workshop' | 'battle' | 'result' | 'ranking';
 
+export interface RoundFighterStats {
+  damageDealt: number;
+  damageTaken: number;
+  kills: number;
+  deaths: number;
+  specialUsed: number;
+  itemsUsed: number;
+}
+
+export interface RoundTeamStats {
+  totalDamage: number;
+  koCount: number;
+  itemsUsed: number;
+  specialUsed: number;
+  fighterStats: { [fighterId: string]: RoundFighterStats };
+}
+
+export type BattleEventType = 
+  | 'ko' 
+  | 'special' 
+  | 'item_pickup' 
+  | 'item_use' 
+  | 'weapon_pickup' 
+  | 'trap_trigger' 
+  | 'respawn'
+  | 'critical_hit'
+  | 'betrayal'
+  | 'ally_buff';
+
+export interface BattleEvent {
+  id: string;
+  type: BattleEventType;
+  timestamp: number;
+  fighterId?: string;
+  fighterName?: string;
+  targetId?: string;
+  targetName?: string;
+  description: string;
+  team?: number;
+  value?: number;
+}
+
 export interface RoundResult {
   round: number;
   winner: number;
   timeElapsed: number;
   koCount: { [team: number]: number };
+  teamStats: { [team: number]: RoundTeamStats };
+  events: BattleEvent[];
 }
 
 export interface FighterBattleStats {

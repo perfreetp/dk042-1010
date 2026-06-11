@@ -7,7 +7,7 @@ import { getWeaponById } from '@/data/weapons';
 import { TITLES, EMOTES } from '@/data/titles';
 import { NeonButton } from '@/components/layout/NeonButton';
 import { NeonCard } from '@/components/layout/NeonCard';
-import { FighterState, BattleRecord } from '@/engine/types';
+import { FighterState, BattleRecord, RoundResult } from '@/engine/types';
 import { ArrowLeft, Home, Play, Pause, RotateCcw, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { generateId } from '@/utils/math';
@@ -47,12 +47,7 @@ export const BattleArena: React.FC = () => {
   const [winner, setWinner] = useState<number | null>(null);
   const [selectedUnlock, setSelectedUnlock] = useState<{ type: 'title' | 'emote'; id: string } | null>(null);
   
-  const allRoundResultsRef = useRef<Array<{
-    round: number;
-    winner: number;
-    timeElapsed: number;
-    koCount: { [team: number]: number };
-  }>>([]);
+  const allRoundResultsRef = useRef<RoundResult[]>([]);
   
   const cumulativeStatsRef = useRef<{ [fighterId: string]: any }>({});
   const totalTimeRef = useRef<number>(0);
@@ -200,20 +195,21 @@ export const BattleArena: React.FC = () => {
     if (engineRef.current) {
       engineRef.current.stop();
       
+      const roundDetails = engineRef.current.getRoundDetails(currentRound, roundWinner);
       const roundStats = engineRef.current.getFighterStats();
-      const roundTime = engineRef.current.state.timeElapsed;
-      const roundKoCount = { ...engineRef.current.state.koCount };
       
       allRoundResultsRef.current.push({
         round: currentRound,
         winner: roundWinner,
-        timeElapsed: roundTime,
-        koCount: roundKoCount,
+        timeElapsed: roundDetails.timeElapsed,
+        koCount: roundDetails.koCount,
+        teamStats: roundDetails.teamStats,
+        events: roundDetails.events,
       });
       
-      totalTimeRef.current += roundTime;
+      totalTimeRef.current += roundDetails.timeElapsed;
       
-      Object.entries(roundStats).forEach(([fid, stats]) => {
+      Object.entries(roundStats).forEach(([fid, stats]: [string, any]) => {
         if (!cumulativeStatsRef.current[fid]) {
           cumulativeStatsRef.current[fid] = {
             damageDealt: 0,
@@ -288,7 +284,7 @@ export const BattleArena: React.FC = () => {
       const newEmotes = updateEmotes();
 
       const battleRecordId = generateId();
-      updateProficiencies(expGained, battleRecordId, finalStats);
+      updateProficiencies(expGained, battleRecordId, finalStats, playerTeams, winnerTeam);
 
       const battleRecord: BattleRecord = {
         id: battleRecordId,

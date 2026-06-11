@@ -1168,4 +1168,53 @@ export class GameEngine {
     });
     return stats;
   }
+
+  getRoundDetails(roundNumber: number, winnerTeam: number) {
+    const fighterStats: { [fighterId: string]: any } = {};
+    const teamStats: { [team: number]: any } = {
+      0: { totalDamage: 0, koCount: this.state.koCount[0] || 0, itemsUsed: 0, specialUsed: 0, fighterStats: {} },
+      1: { totalDamage: 0, koCount: this.state.koCount[1] || 0, itemsUsed: 0, specialUsed: 0, fighterStats: {} },
+    };
+
+    this.state.fighters.forEach(f => {
+      const stats = {
+        damageDealt: f.damageDealt,
+        damageTaken: f.damageTaken,
+        kills: f.kills,
+        deaths: f.deaths,
+        specialUsed: f.specialUsed,
+        itemsUsed: f.itemsUsed,
+      };
+      fighterStats[f.fighterId] = stats;
+      teamStats[f.team].fighterStats[f.fighterId] = stats;
+      teamStats[f.team].totalDamage += f.damageDealt;
+      teamStats[f.team].itemsUsed += f.itemsUsed;
+      teamStats[f.team].specialUsed += f.specialUsed;
+    });
+
+    const events: any[] = this.state.events
+      .filter(e => e.type !== 'round_end' && e.type !== 'battle_end')
+      .map(e => ({
+        id: generateId(),
+        type: e.type,
+        timestamp: e.timestamp,
+        fighterId: e.data?.fighterId,
+        fighterName: e.data?.fighterName,
+        targetId: e.data?.targetId,
+        targetName: e.data?.targetName,
+        description: e.data?.description || '',
+        team: e.data?.team,
+        value: e.data?.value,
+      }));
+
+    return {
+      round: roundNumber,
+      winner: winnerTeam,
+      timeElapsed: this.state.timeElapsed,
+      koCount: { ...this.state.koCount },
+      teamStats,
+      events,
+      fighterStats,
+    };
+  }
 }

@@ -120,7 +120,9 @@ interface GameStore extends GameState {
   updateProficiencies: (
     expGained: { [fighterId: string]: number },
     battleRecordId?: string,
-    fighterStats?: any
+    fighterStats?: any,
+    playerTeams?: { [fighterId: string]: number },
+    winnerTeam?: number
   ) => ProficiencyLog[];
   resetGame: () => void;
   addBattleRecord: (record: BattleRecord) => void;
@@ -267,7 +269,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         case 'title_first_win':
         case 'title_veteran':
         case 'title_legend':
-          progress = state.rankings.reduce((sum, r) => sum + r.wins, 0) + (stats.won ? 1 : 0);
+          progress = state.rankings.reduce((sum, r) => sum + r.wins, 0);
           shouldUnlock = progress >= title.target;
           break;
         case 'title_berserker':
@@ -326,7 +328,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return newlyUnlocked;
   },
 
-  updateProficiencies: (expGained, battleRecordId, fighterStats) => {
+  updateProficiencies: (
+    expGained, 
+    battleRecordId, 
+    fighterStats,
+    playerTeams,
+    winnerTeam
+  ) => {
     const state = get();
     const logs: ProficiencyLog[] = [];
     const newProficiencies = state.proficiencies.map(p => {
@@ -334,7 +342,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (gained === 0) return p;
       
       const stats = fighterStats?.[p.fighterId] || {};
-      const winBonus = gained >= 100 ? 100 : 0;
+      const isWinner = playerTeams ? playerTeams[p.fighterId] === winnerTeam : gained >= 100;
+      const winBonus = isWinner ? 100 : 0;
       const damageBonus = Math.floor((stats.damageDealt || 0) / 100);
       const participation = Math.max(0, gained - winBonus - damageBonus);
       

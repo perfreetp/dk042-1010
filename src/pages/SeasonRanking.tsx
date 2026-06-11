@@ -3,10 +3,11 @@ import { useGameStore } from '@/store/gameStore';
 import { NeonButton } from '@/components/layout/NeonButton';
 import { NeonCard } from '@/components/layout/NeonCard';
 import { getFighterById } from '@/data/fighters';
+import { getItemById } from '@/data/items';
 import { TITLES, EMOTES } from '@/data/titles';
-import { ArrowLeft, Trophy, Medal, Award, Star, Smile, TrendingUp, FileText, X, Swords, Zap, Target, Clock, Heart } from 'lucide-react';
+import { ArrowLeft, Trophy, Medal, Award, Star, Smile, TrendingUp, FileText, X, Swords, Zap, Target, Clock, Heart, ChevronDown, ChevronUp, Flame, Shield, Sparkles, Bomb, AlertTriangle, RefreshCw, Skull, Frown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { BattleRecord, Title, Emote, ProficiencyLog } from '@/engine/types';
+import type { BattleRecord, Title, Emote, ProficiencyLog, RoundResult, BattleEvent } from '@/engine/types';
 
 type TabType = 'ranking' | 'battles' | 'titles' | 'emotes' | 'proficiency';
 
@@ -414,6 +415,7 @@ export const SeasonRanking: React.FC = () => {
                   logs={fighterLogs} 
                   fighterId={selectedProfFighter}
                   formatDate={formatDate}
+                  onJumpToBattle={() => setActiveTab('battles')}
                 />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -487,21 +489,48 @@ export const SeasonRanking: React.FC = () => {
             <h2 className="font-orbitron text-3xl font-bold text-arena-purpleLight mb-2">
               {selectedTitle.name}
             </h2>
-            <p className="font-zcool text-white/80 text-lg mb-6">{selectedTitle.description}</p>
-            <div className="p-4 rounded-xl bg-black/40 text-left space-y-2">
-              <div className="flex justify-between">
+            <p className="font-zcool text-white/80 text-lg mb-2">{selectedTitle.description}</p>
+            {selectedTitle.unlocked ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-arena-green/20 border border-arena-green text-arena-green font-orbitron text-sm mb-4">
+                <Medal size={14} /> 已解锁
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/30 text-white/60 font-orbitron text-sm mb-4">
+                未解锁
+              </div>
+            )}
+            <div className="p-4 rounded-xl bg-black/40 text-left space-y-3">
+              <div className="flex justify-between items-start">
                 <span className="text-white/60 font-zcool">解锁条件</span>
-                <span className="text-arena-cyan font-orbitron">{selectedTitle.condition}</span>
+                <span className="text-arena-cyan font-orbitron text-right max-w-[60%]">{selectedTitle.condition}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-white/60 font-zcool">当前进度</span>
-                <span className="text-arena-gold font-orbitron">{selectedTitle.progress} / {selectedTitle.target}</span>
+                <span className="text-white/60 font-zcool">条件说明</span>
+                <span className="text-white/80 font-zcool text-right max-w-[60%] text-xs">
+                  {selectedTitle.id === 'title_first_win' && '赢得任意一场比赛'}
+                  {selectedTitle.id === 'title_veteran' && `累计赢得 ${selectedTitle.target} 场比赛（胜场称号）`}
+                  {selectedTitle.id === 'title_legend' && `累计赢得 ${selectedTitle.target} 场比赛（胜场称号）`}
+                  {selectedTitle.id === 'title_berserker' && `单场最高伤害达到 ${selectedTitle.target}（伤害称号）`}
+                  {selectedTitle.id === 'title_untouchable' && `单场最低承伤低于 ${selectedTitle.target}（防御称号）`}
+                  {selectedTitle.id === 'title_killer' && `单场最高击杀达到 ${selectedTitle.target}（击杀称号）`}
+                  {selectedTitle.id === 'title_survivor' && `低于10%血量赢下一场（生存称号）`}
+                  {selectedTitle.id === 'title_tactician' && `累计使用 ${selectedTitle.target} 次道具（战术称号）`}
+                </span>
               </div>
-              <div className="h-3 bg-arena-darker rounded-full overflow-hidden mt-2">
-                <div
-                  className="h-full rounded-full bg-arena-purpleLight"
-                  style={{ width: `${Math.min(100, (selectedTitle.progress / selectedTitle.target) * 100)}%` }}
-                />
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-white/60 font-zcool">当前进度</span>
+                  <span className="text-arena-gold font-orbitron font-bold">{selectedTitle.progress} / {selectedTitle.target}</span>
+                </div>
+                <div className="h-3 bg-arena-darker rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-arena-purpleLight to-arena-gold transition-all"
+                    style={{ width: `${Math.min(100, (selectedTitle.progress / selectedTitle.target) * 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-white/40 font-zcool pt-2 border-t border-white/10">
+                💡 提示：称号进度在每场战斗结束后自动更新，胜场类称号按真实胜利场次累计
               </div>
             </div>
           </div>
@@ -515,7 +544,41 @@ export const SeasonRanking: React.FC = () => {
             <h2 className="font-orbitron text-3xl font-bold text-arena-orange mb-2">
               {selectedEmote.name}
             </h2>
-            <p className="font-zcool text-white/80 text-lg">表情收藏已解锁 🎉</p>
+            {selectedEmote.unlocked ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-arena-green/20 border border-arena-green text-arena-green font-orbitron text-sm mb-4">
+                <Star size={14} fill="#10b981" /> 已解锁
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/30 text-white/60 font-orbitron text-sm mb-4">
+                未解锁
+              </div>
+            )}
+            <div className="p-4 rounded-xl bg-black/40 text-left space-y-3">
+              <div className="flex justify-between">
+                <span className="text-white/60 font-zcool">解锁条件</span>
+                <span className="text-arena-orange font-orbitron">累计胜场解锁</span>
+              </div>
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-white/60 font-zcool">需要胜场</span>
+                  <span className="text-arena-gold font-orbitron font-bold">
+                    {(() => {
+                      const idx = EMOTES.findIndex(e => e.id === selectedEmote.id);
+                      return idx >= 0 ? idx * 3 : 0;
+                    })()} 场
+                  </span>
+                </div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-white/60 font-zcool">当前胜场</span>
+                  <span className="text-arena-cyan font-orbitron font-bold">
+                    {rankings.reduce((sum, r) => sum + r.wins, 0)} 场
+                  </span>
+                </div>
+              </div>
+              <div className="text-xs text-white/40 font-zcool pt-2 border-t border-white/10">
+                💡 每累计赢 3 场比赛解锁一个新表情，进度在战斗结算后立即更新
+              </div>
+            </div>
           </div>
         </Modal>
       )}
@@ -550,6 +613,24 @@ const BattleDetailView: React.FC<{
   onBack: () => void;
   formatDate: (ts: number) => string;
 }> = ({ record, onBack, formatDate }) => {
+  const [expandedRound, setExpandedRound] = useState<number | null>(null);
+
+  const getEventIcon = (type: BattleEvent['type']) => {
+    switch (type) {
+      case 'ko': return <Skull size={14} className="text-arena-red" />;
+      case 'special': return <Zap size={14} className="text-arena-gold" />;
+      case 'item_pickup':
+      case 'item_use': return <Sparkles size={14} className="text-arena-green" />;
+      case 'weapon_pickup': return <Swords size={14} className="text-arena-orange" />;
+      case 'trap_trigger': return <AlertTriangle size={14} className="text-arena-red" />;
+      case 'respawn': return <RefreshCw size={14} className="text-arena-cyan" />;
+      case 'critical_hit': return <Flame size={14} className="text-arena-orange" />;
+      case 'betrayal': return <Frown size={14} className="text-arena-purpleLight" />;
+      case 'ally_buff': return <Shield size={14} className="text-arena-cyan" />;
+      default: return <Zap size={14} className="text-white/50" />;
+    }
+  };
+
   return (
     <NeonCard color="cyan" className="p-6">
       <div className="flex items-center gap-3 mb-6">
@@ -592,25 +673,89 @@ const BattleDetailView: React.FC<{
 
       <div className="mb-6">
         <h3 className="font-orbitron text-lg text-arena-gold mb-3 flex items-center gap-2">
-          <Swords size={20} /> 每回合详情
+          <Swords size={20} /> 每回合详情 <span className="text-xs text-white/50 font-zcool">(点击展开)</span>
         </h3>
         <div className="space-y-2">
           {record.roundResults.map((r, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-arena-darker/50 border border-white/10">
-              <div className={cn(
-                'w-10 h-10 rounded-lg flex items-center justify-center font-orbitron font-bold',
-                r.winner === 0 ? 'bg-arena-cyan/30 text-arena-cyan' : 'bg-arena-orange/30 text-arena-orange'
-              )}>
-                R{r.round}
-              </div>
-              <div className="flex-1">
-                <div className="font-orbitron font-bold text-white">
-                  队伍 {r.winner + 1} 获胜
+            <div key={i} className="rounded-lg bg-arena-darker/50 border border-white/10 overflow-hidden">
+              <div
+                className="flex items-center gap-3 p-3 cursor-pointer hover:bg-white/5 transition-all"
+                onClick={() => setExpandedRound(expandedRound === i ? null : i)}
+              >
+                <div className={cn(
+                  'w-10 h-10 rounded-lg flex items-center justify-center font-orbitron font-bold',
+                  r.winner === 0 ? 'bg-arena-cyan/30 text-arena-cyan' : 'bg-arena-orange/30 text-arena-orange'
+                )}>
+                  R{r.round}
                 </div>
-                <div className="text-xs text-white/50 font-zcool">
-                  用时 {Math.floor(r.timeElapsed)}秒 · KO 队1:{r.koCount[0] || 0} 队2:{r.koCount[1] || 0}
+                <div className="flex-1">
+                  <div className="font-orbitron font-bold text-white">
+                    队伍 {r.winner + 1} 获胜
+                  </div>
+                  <div className="text-xs text-white/50 font-zcool flex gap-3">
+                    <span>用时 {Math.floor(r.timeElapsed)}秒</span>
+                    <span>KO 队1:{r.koCount[0] || 0} 队2:{r.koCount[1] || 0}</span>
+                    {r.teamStats && (
+                      <span>伤害 队1:{r.teamStats[0]?.totalDamage || 0} 队2:{r.teamStats[1]?.totalDamage || 0}</span>
+                    )}
+                  </div>
                 </div>
+                {expandedRound === i ? <ChevronUp size={20} className="text-white/50" /> : <ChevronDown size={20} className="text-white/50" />}
               </div>
+
+              {expandedRound === i && r.teamStats && (
+                <div className="p-4 border-t border-white/10 bg-black/20">
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    {[0, 1].map(team => (
+                      <div key={team} className={cn(
+                        'p-3 rounded-lg border-2',
+                        team === r.winner ? 'border-arena-gold bg-arena-gold/10' : 'border-white/10 bg-arena-darker'
+                      )}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={cn(
+                            'font-orbitron font-bold',
+                            team === 0 ? 'text-arena-cyan' : 'text-arena-orange'
+                          )}>
+                            队伍 {team + 1}
+                          </span>
+                          {team === r.winner && <Trophy className="text-arena-gold" size={14} />}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 text-xs font-orbitron">
+                          <span className="text-white/60">总伤害</span>
+                          <span className="text-arena-red text-right">{r.teamStats[team]?.totalDamage || 0}</span>
+                          <span className="text-white/60">KO数</span>
+                          <span className="text-arena-orange text-right">{r.teamStats[team]?.koCount || 0}</span>
+                          <span className="text-white/60">道具使用</span>
+                          <span className="text-arena-green text-right">{r.teamStats[team]?.itemsUsed || 0}</span>
+                          <span className="text-white/60">必杀技</span>
+                          <span className="text-arena-gold text-right">{r.teamStats[team]?.specialUsed || 0}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {r.events && r.events.length > 0 && (
+                    <div>
+                      <h4 className="font-orbitron text-sm text-white/70 mb-2 flex items-center gap-2">
+                        <Clock size={14} /> 关键事件时间线
+                      </h4>
+                      <div className="max-h-40 overflow-y-auto space-y-1 pr-2">
+                        {r.events.slice(0, 30).map((evt, j) => (
+                          <div key={j} className="flex items-start gap-2 text-xs py-1 px-2 rounded bg-black/20">
+                            <div className="mt-0.5">{getEventIcon(evt.type)}</div>
+                            <span className="text-white/40 font-orbitron w-10 shrink-0">
+                              [{Math.floor(evt.timestamp)}s]
+                            </span>
+                            <span className="text-white/80 font-zcool">
+                              {evt.description || `${evt.fighterName || '?'} -> ${evt.type}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -618,7 +763,7 @@ const BattleDetailView: React.FC<{
 
       <div>
         <h3 className="font-orbitron text-lg text-arena-gold mb-3 flex items-center gap-2">
-          <Target size={20} /> 斗士数据
+          <Target size={20} /> 斗士整场数据
         </h3>
         <div className="grid grid-cols-2 gap-3">
           {record.fighterIds.map(fid => {
@@ -697,7 +842,19 @@ const ProficiencyLogsView: React.FC<{
   logs: ProficiencyLog[];
   fighterId: string;
   formatDate: (ts: number) => string;
-}> = ({ logs, fighterId, formatDate }) => {
+  onJumpToBattle: (battleRecordId: string) => void;
+}> = ({ logs, fighterId, formatDate, onJumpToBattle }) => {
+  const { battleRecords, setSelectedBattleRecord } = useGameStore();
+
+  const jumpToBattle = (battleRecordId?: string) => {
+    if (!battleRecordId) return;
+    const record = battleRecords.find(r => r.id === battleRecordId);
+    if (record) {
+      setSelectedBattleRecord(record);
+      onJumpToBattle(battleRecordId);
+    }
+  };
+
   if (logs.length === 0) {
     return (
       <div className="text-center py-12">
@@ -710,63 +867,90 @@ const ProficiencyLogsView: React.FC<{
 
   return (
     <div className="space-y-3">
-      {logs.map(log => (
-        <div
-          key={log.id}
-          className={cn(
-            'p-4 rounded-xl border-2 transition-all',
-            log.leveledUp
-              ? 'bg-arena-gold/10 border-arena-gold/50'
-              : 'bg-arena-darker/50 border-white/10'
-          )}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              {log.leveledUp && (
-                <span className="px-2 py-0.5 rounded bg-arena-gold/30 text-arena-gold font-orbitron text-xs font-bold animate-pulse">
-                  ⬆️ 升级！
+      {logs.map(log => {
+        const hasBattle = log.battleRecordId && battleRecords.some(r => r.id === log.battleRecordId);
+        return (
+          <div
+            key={log.id}
+            className={cn(
+              'p-4 rounded-xl border-2 transition-all',
+              log.leveledUp
+                ? 'bg-arena-gold/10 border-arena-gold/50'
+                : 'bg-arena-darker/50 border-white/10'
+            )}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                {log.leveledUp && (
+                  <span className="px-2 py-0.5 rounded bg-arena-gold/30 text-arena-gold font-orbitron text-xs font-bold animate-pulse">
+                    ⬆️ 升级！
+                  </span>
+                )}
+                {log.sources.winBonus > 0 && (
+                  <span className="px-2 py-0.5 rounded bg-arena-green/20 text-arena-green font-orbitron text-xs">
+                    🏆 胜利
+                  </span>
+                )}
+                {log.sources.winBonus === 0 && (
+                  <span className="px-2 py-0.5 rounded bg-arena-red/20 text-arena-red font-orbitron text-xs">
+                    💔 败北
+                  </span>
+                )}
+                <span className="font-zcool text-white/60 text-sm">
+                  {formatDate(log.timestamp)}
                 </span>
+              </div>
+              <div className="text-arena-green font-orbitron font-bold text-lg">
+                +{log.expGained} EXP
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="p-2 rounded bg-black/30 text-center">
+                <Trophy size={14} className="text-arena-gold mx-auto mb-1" />
+                <div className="text-white font-orbitron text-sm">+{log.sources.winBonus}</div>
+                <div className="text-white/40 text-xs font-zcool">
+                  {log.sources.winBonus > 0 ? '胜利奖励' : '无胜利奖励'}
+                </div>
+              </div>
+              <div className="p-2 rounded bg-black/30 text-center">
+                <Swords size={14} className="text-arena-red mx-auto mb-1" />
+                <div className="text-white font-orbitron text-sm">+{log.sources.damageBonus}</div>
+                <div className="text-white/40 text-xs font-zcool">伤害奖励</div>
+              </div>
+              <div className="p-2 rounded bg-black/30 text-center">
+                <Heart size={14} className="text-arena-cyan mx-auto mb-1" />
+                <div className="text-white font-orbitron text-sm">+{log.sources.participation}</div>
+                <div className="text-white/40 text-xs font-zcool">参战奖励</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-white/50 font-zcool">等级:</span>
+                <span className="text-arena-gold font-orbitron font-bold">Lv.{log.oldLevel}</span>
+                <span className="text-white/30">→</span>
+                <span className={cn(
+                  'font-orbitron font-bold',
+                  log.leveledUp ? 'text-arena-green' : 'text-arena-gold'
+                )}>
+                  Lv.{log.newLevel}
+                </span>
+              </div>
+
+              {hasBattle && (
+                <button
+                  onClick={() => jumpToBattle(log.battleRecordId)}
+                  className="flex items-center gap-1 px-3 py-1 rounded-lg bg-arena-cyan/20 border border-arena-cyan/50 text-arena-cyan font-orbitron text-xs hover:bg-arena-cyan/30 transition-all"
+                >
+                  <FileText size={12} />
+                  查看战报
+                </button>
               )}
-              <span className="font-zcool text-white/60 text-sm">
-                {formatDate(log.timestamp)}
-              </span>
-            </div>
-            <div className="text-arena-green font-orbitron font-bold text-lg">
-              +{log.expGained} EXP
             </div>
           </div>
-
-          <div className="grid grid-cols-3 gap-2 mb-2">
-            <div className="p-2 rounded bg-black/30 text-center">
-              <Trophy size={14} className="text-arena-gold mx-auto mb-1" />
-              <div className="text-white font-orbitron text-sm">+{log.sources.winBonus}</div>
-              <div className="text-white/40 text-xs font-zcool">胜利奖励</div>
-            </div>
-            <div className="p-2 rounded bg-black/30 text-center">
-              <Swords size={14} className="text-arena-red mx-auto mb-1" />
-              <div className="text-white font-orbitron text-sm">+{log.sources.damageBonus}</div>
-              <div className="text-white/40 text-xs font-zcool">伤害奖励</div>
-            </div>
-            <div className="p-2 rounded bg-black/30 text-center">
-              <Heart size={14} className="text-arena-cyan mx-auto mb-1" />
-              <div className="text-white font-orbitron text-sm">+{log.sources.participation}</div>
-              <div className="text-white/40 text-xs font-zcool">参战奖励</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-white/50 font-zcool">等级:</span>
-            <span className="text-arena-gold font-orbitron font-bold">Lv.{log.oldLevel}</span>
-            <span className="text-white/30">→</span>
-            <span className={cn(
-              'font-orbitron font-bold',
-              log.leveledUp ? 'text-arena-green' : 'text-arena-gold'
-            )}>
-              Lv.{log.newLevel}
-            </span>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
