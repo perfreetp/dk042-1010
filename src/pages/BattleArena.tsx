@@ -51,6 +51,8 @@ export const BattleArena: React.FC = () => {
   
   const cumulativeStatsRef = useRef<{ [fighterId: string]: any }>({});
   const totalTimeRef = useRef<number>(0);
+  const roundProcessedRef = useRef<boolean>(false);
+  const battleResultSavedRef = useRef<boolean>(false);
 
   const initEngine = useCallback(() => {
     if (!engineRef.current) {
@@ -64,6 +66,7 @@ export const BattleArena: React.FC = () => {
   }, [rules, selectedFighters, playerTeams, itemRates, weaponEnabled]);
 
   const startRound = useCallback(() => {
+    roundProcessedRef.current = false;
     setRoundCountdown(3);
     const countdownInterval = setInterval(() => {
       setRoundCountdown((prev) => {
@@ -176,9 +179,10 @@ export const BattleArena: React.FC = () => {
     if (!engineRef.current || battleEnded) return;
 
     const checkInterval = setInterval(() => {
-      if (engineRef.current?.isRoundEnded() && !battleEnded) {
+      if (engineRef.current?.isRoundEnded() && !battleEnded && !roundProcessedRef.current) {
         const roundWinner = engineRef.current.getWinner();
         if (roundWinner !== null) {
+          roundProcessedRef.current = true;
           handleRoundEnd(roundWinner);
         }
       }
@@ -242,6 +246,9 @@ export const BattleArena: React.FC = () => {
   };
 
   const handleBattleEnd = (winnerTeam: number) => {
+    if (battleResultSavedRef.current) return;
+    battleResultSavedRef.current = true;
+    
     setBattleEnded(true);
     setWinner(winnerTeam);
     setShowResult(true);
@@ -256,16 +263,24 @@ export const BattleArena: React.FC = () => {
         expGained[fid] = baseExp + bonusExp;
       });
 
+      const fighters = engineRef.current.state.fighters;
+      const winnerFighters = fighters.filter(f => f.team === winnerTeam);
+      const avgHpPercent = winnerFighters.length > 0
+        ? winnerFighters.reduce((sum, f) => sum + (f.hp / f.maxHp), 0) / winnerFighters.length
+        : 0;
+      const survivedLowHp = avgHpPercent > 0 && avgHpPercent < 0.3;
+
+      updateRankings(winnerTeam, finalStats);
+      
       const newTitles = updateTitles({
         won: true,
         maxDamage: Math.max(...Object.values(finalStats).map((s: any) => s.damageDealt)),
         minDamageTaken: Math.min(...Object.values(finalStats).map((s: any) => s.damageTaken)),
         maxKills: Math.max(...Object.values(finalStats).map((s: any) => s.kills)),
-        survivedLowHp: true,
+        survivedLowHp,
         itemsUsed: Object.values(finalStats).reduce((sum: number, s: any) => sum + s.itemsUsed, 0),
       });
       const newEmotes = updateEmotes();
-      updateRankings(winnerTeam, finalStats);
       updateProficiencies(expGained);
 
       setBattleResult({
@@ -507,6 +522,8 @@ export const BattleArena: React.FC = () => {
     allRoundResultsRef.current = [];
     cumulativeStatsRef.current = {};
     totalTimeRef.current = 0;
+    roundProcessedRef.current = false;
+    battleResultSavedRef.current = false;
     resetGame();
     setScreen('menu');
   };
@@ -515,6 +532,8 @@ export const BattleArena: React.FC = () => {
     allRoundResultsRef.current = [];
     cumulativeStatsRef.current = {};
     totalTimeRef.current = 0;
+    roundProcessedRef.current = false;
+    battleResultSavedRef.current = false;
     resetGame();
     setBattleEnded(false);
     setShowResult(false);
