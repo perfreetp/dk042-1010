@@ -44,16 +44,27 @@ export class GameEngine {
   rules: GameRules;
   playerTeams: { [fighterId: string]: number };
   selectedFighterIds: string[];
+  itemRates: { [itemId: string]: number };
+  weaponEnabled: { [weaponId: string]: boolean };
   private lastTime: number = 0;
   private itemSpawnTimer: number = 0;
   private weaponSpawnTimer: number = 0;
   private listeners: ((state: EngineState) => void)[] = [];
   private roundEnded: boolean = false;
+  private respawnTimers: Map<string, number> = new Map();
 
-  constructor(rules: GameRules, selectedFighterIds: string[], playerTeams: { [fighterId: string]: number }) {
+  constructor(
+    rules: GameRules, 
+    selectedFighterIds: string[], 
+    playerTeams: { [fighterId: string]: number },
+    itemRates: { [itemId: string]: number } = {},
+    weaponEnabled: { [weaponId: string]: boolean } = {}
+  ) {
     this.rules = rules;
     this.selectedFighterIds = selectedFighterIds;
     this.playerTeams = playerTeams;
+    this.itemRates = itemRates;
+    this.weaponEnabled = weaponEnabled;
     this.state = this.createInitialState();
   }
 
@@ -203,8 +214,6 @@ export class GameEngine {
 
   private updateFighters(dt: number) {
     this.state.fighters.forEach(fighter => {
-      if (fighter.state === 'ko') return;
-
       this.updateFighterBuffs(fighter, dt);
 
       if (fighter.invincible) {
@@ -216,6 +225,11 @@ export class GameEngine {
 
       if (fighter.attackCooldown > 0) {
         fighter.attackCooldown -= dt;
+      }
+
+      if (fighter.state === 'ko') {
+        this.checkRespawn(fighter, dt);
+        return;
       }
 
       if (fighter.stateTimer > 0) {
@@ -234,7 +248,6 @@ export class GameEngine {
       this.checkTrapCollisions(fighter);
       this.checkItemPickup(fighter);
       this.checkWeaponPickup(fighter);
-      this.checkRespawn(fighter);
     });
   }
 
@@ -509,20 +522,31 @@ export class GameEngine {
     });
   }
 
-  private checkRespawn(fighter: FighterState) {
-    if (fighter.state === 'ko' && fighter.deaths < this.rules.winValue) {
-      setTimeout(() => {
-        if (fighter.state === 'ko') {
-          fighter.hp = fighter.maxHp;
-          fighter.state = 'idle';
-          fighter.invincible = true;
-          fighter.invincibleTimer = 2;
-          fighter.position.x = fighter.team === 0 ? 150 : ARENA_WIDTH - 150;
-          fighter.position.y = GROUND_Y - FIGHTER_HEIGHT - 100;
-          fighter.velocity.y = -5;
-          fighter.energy = 0;
-        }
-      }, 2000);
+  private checkRespawn(fighter: FighterState, dt: number) {
+    if (fighter.state !== 'ko') return;
+    
+    if (fighter.deaths >= this.rules.winValue) {
+      return;
+    }
+    
+    const currentTimer = this.respawnTimers.get(fighter.id) ?? 2;
+    const newTimer = currentTimer - dt;
+    
+    if (newTimer <= 0) {
+      this.respawnTimers.delete(fighter.id);
+      fighter.hp = fighter.maxHp;
+      fighter.state = 'idle';
+      fighter.invincible = true;
+      fighter.invincibleTimer = 2;
+      fighter.position.x = fighter.team === 0 ? 150 : ARENA_WIDTH - 150;
+      fighter.position.y = GROUND_Y - FIGHTER_HEIGHT - 100;
+      fighter.velocity.y = -5;
+      fighter.energy = 0;
+      fighter.heldItemId = null;
+      fighter.heldWeaponId = null;
+      fighter.buffs = [];
+    } else {
+      this.respawnTimers.set(fighter.id, newTimer);
     }
   }
 
@@ -553,17 +577,30 @@ export class GameEngine {
   }
 
   private spawnRandomItem() {
-    const availableItems = ITEMS.filter(item => {
-      const rate = this.rules.itemSpawnRate;
-      return Math.random() * 100 < (item.spawnRate * (rate / 50));
-    });
+    const itemsWithWeight = ITEMS
+      .map(item => {
+        const rate = this.itemRates[item.id] ?? item.spawnRate;
+        return { item, weight: rate };
+      })
+      .filter(({ weight }) => weight > 0);
 
-    if (availableItems.length === 0) return;
+    if (itemsWithWeight.length === 0) return;
+
+    const totalWeight = itemsWithWeight.reduce((sum, { weight }) => sum + weight, 0);
+    let random = Math.random() * totalWeight;
     
-    const item = randomChoice(availableItems);
+    let selectedItem = itemsWithWeight[0].item;
+    for (const { item, weight } of itemsWithWeight) {
+      random -= weight;
+      if (random <= 0) {
+        selectedItem = item;
+        break;
+      }
+    }
+
     this.state.itemSpawns.push({
       id: generateId(),
-      itemId: item.id,
+      itemId: selectedItem.id,
       position: {
         x: randomRange(100, ARENA_WIDTH - 100),
         y: randomRange(GROUND_Y - 200, GROUND_Y - 50),
@@ -575,6 +612,9 @@ export class GameEngine {
   private updateWeaponSpawns(dt: number) {
     if (!this.rules.weaponSpawn) return;
     
+    const enabledWeapons = WEAPONS.filter(w => this.weaponEnabled[w.id] !== false);
+    if (enabledWeapons.length === 0) return;
+    
     this.weaponSpawnTimer += dt;
     
     if (this.weaponSpawnTimer >= 15 && this.state.weaponSpawns.length < 2) {
@@ -584,7 +624,7 @@ export class GameEngine {
   }
 
   private spawnRandomWeapon() {
-    const availableWeapons = WEAPONS.filter(w => true);
+    const availableWeapons = WEAPONS.filter(w => this.weaponEnabled[w.id] !== false);
     if (availableWeapons.length === 0) return;
     
     const weapon = randomChoice(availableWeapons);

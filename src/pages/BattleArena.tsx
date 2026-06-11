@@ -16,6 +16,8 @@ export const BattleArena: React.FC = () => {
     rules, 
     selectedFighters, 
     playerTeams,
+    itemRates,
+    weaponEnabled,
     isPaused,
     setPaused,
     currentRound,
@@ -39,17 +41,27 @@ export const BattleArena: React.FC = () => {
   const [roundCountdown, setRoundCountdown] = useState<number | null>(3);
   const [battleEnded, setBattleEnded] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
+  
+  const allRoundResultsRef = useRef<Array<{
+    round: number;
+    winner: number;
+    timeElapsed: number;
+    koCount: { [team: number]: number };
+  }>>([]);
+  
+  const cumulativeStatsRef = useRef<{ [fighterId: string]: any }>({});
+  const totalTimeRef = useRef<number>(0);
 
   const initEngine = useCallback(() => {
     if (!engineRef.current) {
-      engineRef.current = new GameEngine(rules, selectedFighters, playerTeams);
+      engineRef.current = new GameEngine(rules, selectedFighters, playerTeams, itemRates, weaponEnabled);
       engineStateRef.current = engineRef.current.state;
       
       engineRef.current.subscribe((state) => {
         engineStateRef.current = state;
       });
     }
-  }, [rules, selectedFighters, playerTeams]);
+  }, [rules, selectedFighters, playerTeams, itemRates, weaponEnabled]);
 
   const startRound = useCallback(() => {
     setRoundCountdown(3);
@@ -178,7 +190,40 @@ export const BattleArena: React.FC = () => {
   const handleRoundEnd = (roundWinner: number) => {
     if (engineRef.current) {
       engineRef.current.stop();
+      
+      const roundStats = engineRef.current.getFighterStats();
+      const roundTime = engineRef.current.state.timeElapsed;
+      const roundKoCount = { ...engineRef.current.state.koCount };
+      
+      allRoundResultsRef.current.push({
+        round: currentRound,
+        winner: roundWinner,
+        timeElapsed: roundTime,
+        koCount: roundKoCount,
+      });
+      
+      totalTimeRef.current += roundTime;
+      
+      Object.entries(roundStats).forEach(([fid, stats]) => {
+        if (!cumulativeStatsRef.current[fid]) {
+          cumulativeStatsRef.current[fid] = {
+            damageDealt: 0,
+            damageTaken: 0,
+            kills: 0,
+            deaths: 0,
+            specialUsed: 0,
+            itemsUsed: 0,
+          };
+        }
+        cumulativeStatsRef.current[fid].damageDealt += stats.damageDealt;
+        cumulativeStatsRef.current[fid].damageTaken += stats.damageTaken;
+        cumulativeStatsRef.current[fid].kills += stats.kills;
+        cumulativeStatsRef.current[fid].deaths += stats.deaths;
+        cumulativeStatsRef.current[fid].specialUsed += stats.specialUsed;
+        cumulativeStatsRef.current[fid].itemsUsed += stats.itemsUsed;
+      });
     }
+    
     addRoundWin(roundWinner);
 
     const winsNeeded = Math.ceil(rules.rounds / 2);
@@ -202,38 +247,35 @@ export const BattleArena: React.FC = () => {
     setShowResult(true);
 
     if (engineRef.current) {
-      const stats = engineRef.current.getFighterStats();
+      const finalStats = cumulativeStatsRef.current;
       const expGained: { [fighterId: string]: number } = {};
       selectedFighters.forEach(fid => {
         const isWinner = playerTeams[fid] === winnerTeam;
-        expGained[fid] = isWinner ? 100 : 50;
+        const baseExp = isWinner ? 100 : 50;
+        const bonusExp = Math.floor((finalStats[fid]?.damageDealt || 0) / 100);
+        expGained[fid] = baseExp + bonusExp;
       });
 
-      updateRankings(winnerTeam, stats);
-      updateTitles({
+      const newTitles = updateTitles({
         won: true,
-        maxDamage: Math.max(...Object.values(stats).map((s: any) => s.damageDealt)),
-        minDamageTaken: Math.min(...Object.values(stats).map((s: any) => s.damageTaken)),
-        maxKills: Math.max(...Object.values(stats).map((s: any) => s.kills)),
+        maxDamage: Math.max(...Object.values(finalStats).map((s: any) => s.damageDealt)),
+        minDamageTaken: Math.min(...Object.values(finalStats).map((s: any) => s.damageTaken)),
+        maxKills: Math.max(...Object.values(finalStats).map((s: any) => s.kills)),
         survivedLowHp: true,
-        itemsUsed: Object.values(stats).reduce((sum: number, s: any) => sum + s.itemsUsed, 0),
+        itemsUsed: Object.values(finalStats).reduce((sum: number, s: any) => sum + s.itemsUsed, 0),
       });
-      updateEmotes();
+      const newEmotes = updateEmotes();
+      updateRankings(winnerTeam, finalStats);
       updateProficiencies(expGained);
 
       setBattleResult({
         winnerTeam,
-        roundResults: [{
-          round: currentRound,
-          winner: winnerTeam,
-          timeElapsed: engineRef.current.state.timeElapsed,
-          koCount: engineRef.current.state.koCount,
-        }],
-        fighterStats: stats,
-        newTitles: [],
-        newEmotes: [],
+        roundResults: allRoundResultsRef.current,
+        fighterStats: finalStats,
+        newTitles,
+        newEmotes,
         expGained,
-        totalTime: engineRef.current.state.timeElapsed,
+        totalTime: totalTimeRef.current,
       });
     }
   };
@@ -462,11 +504,17 @@ export const BattleArena: React.FC = () => {
   };
 
   const handleExit = () => {
+    allRoundResultsRef.current = [];
+    cumulativeStatsRef.current = {};
+    totalTimeRef.current = 0;
     resetGame();
     setScreen('menu');
   };
 
   const handleRestart = () => {
+    allRoundResultsRef.current = [];
+    cumulativeStatsRef.current = {};
+    totalTimeRef.current = 0;
     resetGame();
     setBattleEnded(false);
     setShowResult(false);
@@ -613,23 +661,69 @@ export const BattleArena: React.FC = () => {
             )}
 
             {showResult && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md rounded-xl">
-                <NeonCard color="gold" className="p-8 min-w-[500px] text-center">
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md rounded-xl overflow-auto">
+                <NeonCard color="gold" className="p-8 min-w-[600px] max-w-[800px] text-center my-8">
                   <div className="text-6xl mb-4">🏆</div>
                   <h2 className="font-orbitron text-4xl font-black text-arena-gold text-shadow-gold mb-4">
                     战斗结束！
                   </h2>
-                  <p className="font-zcool text-2xl text-white mb-6">
+                  <p className="font-zcool text-2xl text-white mb-2">
                     <span className={winner === 0 ? 'text-arena-cyan' : 'text-arena-orange'}>
                       队伍 {winner !== null ? winner + 1 : '?'}
                     </span>
                     {' '}获得胜利！
                   </p>
+                  <p className="font-zcool text-sm text-white/50 mb-6">
+                    总用时: {Math.floor(totalTimeRef.current / 60)}分{Math.floor(totalTimeRef.current % 60)}秒
+                  </p>
+
+                  <div className="mb-6">
+                    <h3 className="font-orbitron text-xl text-arena-cyan mb-4 text-left">📋 每回合胜负</h3>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {allRoundResultsRef.current.map((result, idx) => (
+                        <div
+                          key={idx}
+                          className={cn(
+                            'px-4 py-2 rounded-lg border-2 font-orbitron text-sm',
+                            result.winner === 0 
+                              ? 'border-arena-cyan bg-arena-cyan/20 text-arena-cyan' 
+                              : 'border-arena-orange bg-arena-orange/20 text-arena-orange'
+                          )}
+                        >
+                          第{result.round}回合 · 队{result.winner + 1}胜
+                          <span className="text-white/50 ml-2 text-xs">
+                            ({Math.floor(result.timeElapsed)}秒)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-center gap-8 mt-4">
+                      <div className="text-center">
+                        <div className="text-3xl font-orbitron font-bold text-arena-cyan">
+                          {roundWins[0] || 0}
+                        </div>
+                        <div className="text-sm text-white/50 font-zcool">队1胜场</div>
+                      </div>
+                      <div className="text-3xl text-white/30 font-orbitron">:</div>
+                      <div className="text-center">
+                        <div className="text-3xl font-orbitron font-bold text-arena-orange">
+                          {roundWins[1] || 0}
+                        </div>
+                        <div className="text-sm text-white/50 font-zcool">队2胜场</div>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-6 text-left">
                     {fighters.map(f => {
                       const fd = getFighterById(f.fighterId);
                       const isWinner = f.team === winner;
+                      const cumulative = cumulativeStatsRef.current[f.fighterId] || {
+                        damageDealt: f.damageDealt,
+                        damageTaken: f.damageTaken,
+                        kills: f.kills,
+                        deaths: f.deaths,
+                      };
                       return (
                         <div
                           key={f.id}
@@ -644,10 +738,10 @@ export const BattleArena: React.FC = () => {
                             {isWinner && <Trophy className="text-arena-gold" size={18} />}
                           </div>
                           <div className="grid grid-cols-2 gap-1 text-xs font-orbitron text-white/70">
-                            <span>伤害: {f.damageDealt}</span>
-                            <span>承伤: {f.damageTaken}</span>
-                            <span>击杀: {f.kills}</span>
-                            <span>死亡: {f.deaths}</span>
+                            <span className="text-arena-red">总伤害: {cumulative.damageDealt}</span>
+                            <span className="text-arena-cyan">总承伤: {cumulative.damageTaken}</span>
+                            <span className="text-arena-orange">总击杀: {cumulative.kills}</span>
+                            <span className="text-arena-purpleLight">总死亡: {cumulative.deaths}</span>
                           </div>
                         </div>
                       );
