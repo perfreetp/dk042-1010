@@ -1,0 +1,82 @@
+import { Item } from '@/engine/types';
+
+export const ITEMS: Item[] = [
+  {
+    id: 'item_heal',
+    name: '治疗药水',
+    icon: '💚',
+    description: '恢复30%最大生命值',
+    type: 'heal',
+    value: 0.3,
+    spawnRate: 30,
+    color: '#22c55e',
+  },
+  {
+    id: 'item_heal_big',
+    name: '大型治疗药水',
+    icon: '❤️',
+    description: '恢复60%最大生命值',
+    type: 'heal',
+    value: 0.6,
+    spawnRate: 10,
+    color: '#ef4444',
+  },
+  {
+    id: 'item_power',
+    name: '力量增幅',
+    icon: '💪',
+    description: '攻击力提升50%，持续10秒',
+    type: 'power',
+    value: 0.5,
+    duration: 10,
+    spawnRate: 20,
+    color: '#f97316',
+  },
+  {
+    id: 'item_speed',
+    name: '疾风之靴',
+    icon: '👟',
+    description: '移动速度提升60%，持续8秒',
+    type: 'speed',
+    value: 0.6,
+    duration: 8,
+    spawnRate: 20,
+    color: '#06b6d4',
+  },
+  {
+    id: 'item_shield',
+    name: '能量护盾',
+    icon: '🛡️',
+    description: '获得最大生命值40%的护盾，持续15秒',
+    type: 'shield',
+    value: 0.4,
+    duration: 15,
+    spawnRate: 15,
+    color: '#3b82f6',
+  },
+  {
+    id: 'item_bomb',
+    name: '定时炸弹',
+    icon: '💣',
+    description: '放置炸弹，3秒后爆炸对范围内敌人造成大量伤害',
+    type: 'bomb',
+    value: 150,
+    spawnRate: 15,
+    color: '#6b7280',
+  },
+  {
+    id: 'item_smoke',
+    name: '烟雾弹',
+    icon: '💨',
+    description: '释放烟雾，使范围内敌人命中率下降并减速',
+    type: 'smoke',
+    value: 0.5,
+    duration: 5,
+    spawnRate: 12,
+    color: '#9ca3af',
+  },
+];
+
+export const getItemById = (id: string): Item | undefined => {
+  return ITEMS.find(i => i.id === id);
+};
